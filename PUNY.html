@@ -752,7 +752,7 @@ textarea.form-input{resize:vertical}
         <div style="font-size:12px;color:var(--txm);line-height:1.9">
           <div><strong style="color:var(--gl)">PUNY – Agenda Personal</strong></div>
           <div>Autor: <strong style="color:var(--tx)">Pablo M. Mugherli</strong></div>
-          <div id="cfg-about-version">Versión: 2.0 · Build: 28JUN-V9</div>
+          <div id="cfg-about-version">Versión: 2.0 · Build: 28JUN-V10</div>
           <div id="cfg-about-date">Última actualización: —</div>
           <div style="margin-top:9px;font-size:10px;color:var(--txd)">© Pablo M. Mugherli – Todos los derechos reservados.<br>Queda prohibida la reproducción total o parcial sin autorización escrita del autor.</div>
         </div>
@@ -2449,7 +2449,7 @@ function renderConfig(){
   $('cfg-lastupdate').value=USER.lastUpdate||todayISO();
   let secOpts='';SEC_QUESTIONS.forEach((q,i)=>{secOpts+='<option value="'+i+'" '+(USER.secQuestion===i?'selected':'')+'>'+esc(q)+'</option>'});
   $('cfg-secquestion').innerHTML=secOpts;
-  $('cfg-about-version').textContent='Versión: '+(USER.version||'2.0')+' · Build: 28JUN-V9';
+  $('cfg-about-version').textContent='Versión: '+(USER.version||'2.0')+' · Build: 28JUN-V10';
   $('cfg-about-date').textContent='Última actualización: '+(USER.lastUpdate?fmtFecha(USER.lastUpdate):'—');
   if(USER.jbConfig){$('cfg-jb-apikey').value=USER.jbConfig.apiKey||'';$('cfg-jb-binid').value=USER.jbConfig.binId||''}
   if($('cfg-apikey'))$('cfg-apikey').value=USER.apiKey||'';
@@ -2528,24 +2528,31 @@ async function testJBConfig(){
 }
 
 let _pushTimer=null;
+let _jbBusy=false;
+
 function schedulePush(){
   if(!getJBConfig())return;
   clearTimeout(_pushTimer);
-  _pushTimer=setTimeout(pushToCloud,3000);
+  _pushTimer=setTimeout(pushToCloud,5000);
 }
 
 async function pushToCloud(){
   const cfg=getJBConfig();if(!cfg)return;
+  if(_jbBusy)return;
+  _jbBusy=true;
   try{
     const payload={contacts:DB.contacts||[],events:DB.events||[],movements:DB.movements||[],notes:DB.notes||[],version:Date.now()};
     const r=await fetch(JB_URL+cfg.binId,{method:'PUT',headers:{'Content-Type':'application/json','X-Master-Key':cfg.apiKey},body:JSON.stringify(payload)});
     if(r.ok){const jbSt=$('jb-status');if(jbSt){jbSt.style.color='var(--gl)';jbSt.textContent='↑ Subido: '+new Date().toLocaleTimeString('es-AR');}}
     else{throw new Error('HTTP '+r.status);}
   }catch(e){const jbSt=$('jb-status');if(jbSt){jbSt.style.color='var(--er)';jbSt.textContent='❌ Error al subir: '+e.message;}}
+  finally{_jbBusy=false;}
 }
 
 async function pullFromCloud(){
-  const cfg=getJBConfig();if(!cfg){toast('Configura JSONBin primero','warning');return;}
+  const cfg=getJBConfig();if(!cfg){toast('Configurá JSONBin primero','warning');return;}
+  if(_jbBusy){toast('Esperando operación anterior...','info');setTimeout(pullFromCloud,2000);return;}
+  _jbBusy=true;
   try{
     const r=await fetch(JB_URL+cfg.binId+'/latest',{headers:{'X-Master-Key':cfg.apiKey}});
     if(!r.ok){throw new Error('HTTP '+r.status);}
@@ -2555,11 +2562,12 @@ async function pullFromCloud(){
     if(remote.events)DB.events=remote.events;
     if(remote.movements)DB.movements=remote.movements;
     if(remote.notes)DB.notes=remote.notes;
-    saveDB();
+    localStorage.setItem('puny_db_v3',JSON.stringify(DB));
     const jbSt=$('jb-status');if(jbSt){jbSt.style.color='var(--gl)';jbSt.textContent='↓ Descargado: '+new Date().toLocaleTimeString('es-AR');}
     toast('Datos sincronizados desde la nube','success');
     goPage(currentPage||'dashboard');
   }catch(e){toast('Error al descargar: '+e.message,'error');}
+  finally{_jbBusy=false;}
 }
 function clearData(){
   openModal('Borrar datos','<div style="font-size:13px;color:var(--txm)">Se eliminarán <strong style="color:var(--er)">todos</strong> los contactos, eventos y movimientos. Tu cuenta y configuración se mantienen. ¿Continuar?</div>',
