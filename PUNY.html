@@ -293,8 +293,8 @@ hr.gold{border:none;border-top:1px solid var(--bd);margin:12px 0}
     options = options || {};
     const urlStr = String(url);
     // Agregar siempre si es una URL externa (no mismo origen)
-    const isExternal = urlStr.startsWith('http://') || urlStr.startsWith('https://');
-    if (isExternal) {
+    const isNgrok = urlStr.includes('ngrok');
+    if (isNgrok) {
       if (options.headers instanceof Headers) {
         options.headers.set('ngrok-skip-browser-warning', 'true');
       } else {
@@ -752,7 +752,7 @@ textarea.form-input{resize:vertical}
         <div style="font-size:12px;color:var(--txm);line-height:1.9">
           <div><strong style="color:var(--gl)">PUNY – Agenda Personal</strong></div>
           <div>Autor: <strong style="color:var(--tx)">Pablo M. Mugherli</strong></div>
-          <div id="cfg-about-version">Versión: 2.0 · Build: 28JUN-V8</div>
+          <div id="cfg-about-version">Versión: 2.0 · Build: 28JUN-V9</div>
           <div id="cfg-about-date">Última actualización: —</div>
           <div style="margin-top:9px;font-size:10px;color:var(--txd)">© Pablo M. Mugherli – Todos los derechos reservados.<br>Queda prohibida la reproducción total o parcial sin autorización escrita del autor.</div>
         </div>
@@ -2449,7 +2449,7 @@ function renderConfig(){
   $('cfg-lastupdate').value=USER.lastUpdate||todayISO();
   let secOpts='';SEC_QUESTIONS.forEach((q,i)=>{secOpts+='<option value="'+i+'" '+(USER.secQuestion===i?'selected':'')+'>'+esc(q)+'</option>'});
   $('cfg-secquestion').innerHTML=secOpts;
-  $('cfg-about-version').textContent='Versión: '+(USER.version||'2.0')+' · Build: 28JUN-V8';
+  $('cfg-about-version').textContent='Versión: '+(USER.version||'2.0')+' · Build: 28JUN-V9';
   $('cfg-about-date').textContent='Última actualización: '+(USER.lastUpdate?fmtFecha(USER.lastUpdate):'—');
   if(USER.jbConfig){$('cfg-jb-apikey').value=USER.jbConfig.apiKey||'';$('cfg-jb-binid').value=USER.jbConfig.binId||''}
   if($('cfg-apikey'))$('cfg-apikey').value=USER.apiKey||'';
