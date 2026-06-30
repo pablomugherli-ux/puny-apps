@@ -271,7 +271,7 @@ hr.gold{border:none;border-top:1px solid var(--bd);margin:12px 0}
   #sidebar{transform:translateX(calc(-1*var(--sw)));position:fixed;z-index:100}
   #sidebar.open{transform:translateX(0)}
   #sidebar-overlay.open{display:block}
-  #main{margin-left:0}.hamburger{display:block}
+  #main{margin-left:0}
   .form-row{grid-template-columns:1fr}
   .detail-grid{grid-template-columns:1fr}
   .fin-tab{font-size:10px;padding:5px 8px}
@@ -281,6 +281,13 @@ hr.gold{border:none;border-top:1px solid var(--bd);margin:12px 0}
   .setup-body,.setup-footer{padding:18px 20px}
   .setup-top{padding:16px 20px 13px}
   .login-box{padding:26px 20px}
+  /* Áreas táctiles mínimas (44px) y anti-zoom iOS — solo en mobile, no altera el diseño desktop */
+  .form-input,select.form-input,textarea.form-input{font-size:16px}
+  .hamburger{display:flex;min-width:44px;min-height:44px;align-items:center;justify-content:center;padding:0}
+  .pass-toggle{padding:11px;right:2px}
+  .nav-item{padding:13px 16px;min-height:44px;box-sizing:border-box}
+  .btn-close{min-width:36px;min-height:36px;display:flex;align-items:center;justify-content:center}
+  #sync-topbar{display:none} /* prioriza espacio del título en pantallas angostas; el estado de sync sigue visible en Configuración */
 }
 @media(max-width:480px){.stat-grid{grid-template-columns:1fr 1fr}.stat-value{font-size:20px}}
 </style>
@@ -350,7 +357,7 @@ textarea.form-input{resize:vertical}
 .cal-day.has-event::after{content:'';display:block;width:4px;height:4px;border-radius:50%;background:var(--gd);margin:1px auto 0}
 .cal-day.selected.has-event::after{background:#0C0B08}
 .cal-day.empty{pointer-events:none}
-.topbar-title{font-size:14px;font-weight:700;color:var(--gl);flex:1}
+.topbar-title{font-size:14px;font-weight:700;color:var(--gl);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 
 /* ---- NOTAS ---- */
 .note-card{background:var(--bgc);border:1px solid var(--bd);border-radius:var(--r2);padding:13px 15px;margin-bottom:9px;cursor:pointer;transition:all .2s;border-left:3px solid var(--gd)}
@@ -458,6 +465,18 @@ textarea.form-input{resize:vertical}
     <button class="btn btn-primary" style="width:100%;margin-top:4px" onclick="doLogin()">Ingresar</button>
     <div id="login-error" class="login-err"></div>
     <div class="login-links" style="margin-top:14px"><a onclick="showRecovery()">¿Olvidaste tu contraseña?</a></div>
+    <div class="login-links" style="margin-top:6px"><a onclick="toggleNewDevice()">📱 Acceder desde otro dispositivo</a></div>
+    <div id="login-newdevice" style="display:none;margin-top:12px;border-top:1px solid var(--bd);padding-top:12px">
+      <div style="font-size:11px;color:var(--txm);margin-bottom:8px;text-align:left">Ingresá los datos de tu JSONBin para cargar tu cuenta desde este dispositivo:</div>
+      <div class="form-group"><label class="form-label">API Key (X-Master-Key)</label>
+        <div class="pass-wrap"><input class="form-input" type="password" id="nd-apikey" placeholder="$2a$10$..."><button class="pass-toggle" type="button" onclick="togglePass('nd-apikey',this)">👁</button></div>
+      </div>
+      <div class="form-group"><label class="form-label">Bin ID</label>
+        <input class="form-input" type="text" id="nd-binid" placeholder="6a418c7e...">
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-bottom:6px" onclick="doLoginNewDevice()">🔑 Ingresar con JSONBin</button>
+      <button class="btn btn-secondary" style="width:100%;font-size:12px" onclick="startSetup()">✨ Crear cuenta nueva</button>
+    </div>
     <div class="login-author">© Pablo M. Mugherli – Todos los derechos reservados</div>
   </div>
 </div>
@@ -526,6 +545,7 @@ textarea.form-input{resize:vertical}
     <button class="hamburger" onclick="toggleSidebar()">☰</button>
     <div class="topbar-title" id="page-title">Dashboard</div>
     <div class="topbar-right">
+      <div id="sync-topbar" style="font-size:10px;color:var(--txm);padding:0 6px;white-space:nowrap"></div>
       <div class="topbar-clock" id="tb-date"></div>
     </div>
   </div>
@@ -696,9 +716,10 @@ textarea.form-input{resize:vertical}
         <div class="form-group"><label class="form-label">API Key (X-Master-Key)</label><input class="form-input" id="cfg-jb-apikey" type="password" placeholder="$2a$10$..."></div>
         <div class="form-group"><label class="form-label">Bin ID</label><input class="form-input" id="cfg-jb-binid" type="text" placeholder="6a418c7e..."></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" onclick="saveJBConfig()">Guardar</button>
+          <button id="btn-save-jb" class="btn btn-primary btn-sm" onclick="saveJBConfig()">Guardar</button>
           <button class="btn btn-secondary btn-sm" onclick="testJBConfig()">🔌 Probar conexión</button>
           <button class="btn btn-secondary btn-sm" onclick="pushToCloud()">⬆ Subir datos</button>
+          <button id="btn-config-lock" class="btn btn-secondary btn-sm" onclick="toggleConfigLock()" style="width:100%;margin-top:6px">🔓 Bloquear configuración</button>
           <button class="btn btn-secondary btn-sm" onclick="pullFromCloud()">⬇ Descargar datos</button>
         </div>
         <div id="jb-status" style="margin-top:8px;font-size:11px;color:var(--txm)"></div>
@@ -708,7 +729,7 @@ textarea.form-input{resize:vertical}
         <div class="config-title">💾 Datos</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
           <button class="btn btn-secondary btn-sm" onclick="exportDatosJSON()">📤 Exportar backup</button>
-          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('import-json').click()">📥 Importar backup</button>
+          <button id="btn-import-json" class="btn btn-secondary btn-sm" onclick="document.getElementById('import-json').click()">📥 Importar backup</button>
           <input type="file" id="import-json" accept=".json" style="display:none" onchange="importDatos(this)">
           <button class="btn btn-sm btn-danger" onclick="clearData()">🗑️ Borrar datos</button>
           <button class="btn btn-sm btn-danger" onclick="resetApp()">⚠️ Resetear app</button>
@@ -752,7 +773,7 @@ textarea.form-input{resize:vertical}
         <div style="font-size:12px;color:var(--txm);line-height:1.9">
           <div><strong style="color:var(--gl)">PUNY – Agenda Personal</strong></div>
           <div>Autor: <strong style="color:var(--tx)">Pablo M. Mugherli</strong></div>
-          <div id="cfg-about-version">Versión: 2.0 · Build: 28JUN-V11</div>
+          <div id="cfg-about-version">Versión: 2.0 · Build: 29JUN-V14</div>
           <div id="cfg-about-date">Última actualización: —</div>
           <div style="margin-top:9px;font-size:10px;color:var(--txd)">© Pablo M. Mugherli – Todos los derechos reservados.<br>Queda prohibida la reproducción total o parcial sin autorización escrita del autor.</div>
         </div>
@@ -1007,10 +1028,33 @@ function checkPassStrength(input,barId,textId){
 }
 
 // ---- PERSISTENCIA ----
-function saveUser(){localStorage.setItem('puny_user_v2',JSON.stringify(USER))}
+function saveUser(){
+  try{
+    localStorage.setItem('puny_user_v2',JSON.stringify(USER));
+  }catch(e){
+    console.error('[PUNY] Error al guardar usuario:',e);
+    toast('⚠️ No se pudo guardar la configuración localmente (almacenamiento lleno)','error');
+  }
+}
 function loadUser(){try{const s=localStorage.getItem('puny_user_v2');return s?JSON.parse(s):null}catch(e){return null}}
-function saveDB(){localStorage.setItem('puny_db_v3',JSON.stringify(DB));schedulePush();}
-function loadDB(){try{const s=localStorage.getItem('puny_db_v3');if(s){const d=JSON.parse(s);DB.contacts=d.contacts||[];DB.events=d.events||[];DB.movements=d.movements||[];DB.notes=d.notes||[];DB.recordings=d.recordings||[];DB.webUrls=d.webUrls||[];DB.reports=d.reports||[];DB.emailAccounts=d.emailAccounts||[]}}catch(e){}}
+function _applyDBData(d){DB.contacts=d.contacts||[];DB.events=d.events||[];DB.movements=d.movements||[];DB.notes=d.notes||[];DB.recordings=d.recordings||[];DB.webUrls=d.webUrls||[];DB.reports=d.reports||[];DB.emailAccounts=d.emailAccounts||[];DB._v=d._v||{};DB._localVer=d._localVer||0;}
+function loadDB(){
+  try{
+    const s=localStorage.getItem('puny_db_v3');
+    if(s){_applyDBData(JSON.parse(s));return;}
+  }catch(e){
+    // Corrupción detectada → intentar snapshot
+    console.warn('[PUNY] DB corrupta, restaurando snapshot...');
+    try{
+      const snap=localStorage.getItem('puny_db_snap');
+      if(snap){
+        const sv=JSON.parse(snap);
+        _applyDBData(JSON.parse(sv.d));
+        toast('⚠️ Se restauró un snapshot de seguridad de los datos','warning');
+      }
+    }catch(e2){console.error('[PUNY] Snapshot también corrupto',e2);}
+  }
+}
 
 // ============================================================
 // SETUP WIZARD
@@ -1118,7 +1162,7 @@ async function setupNext(){
     fullName:setupData.fullName,username:setupData.username,email:setupData.email,
     passHash,secQuestion:setupData.secQuestion,secAnswerHash:ansHash,
     logo:setupData.logo||'',version:'2.0',
-    lastUpdate:todayISO(),fbConfig:null,jbConfig:null,createdAt:new Date().toISOString()
+    lastUpdate:todayISO(),fbConfig:null,jbConfig:null,configLocked:false,createdAt:new Date().toISOString()
   };
   saveUser();
   applyLogo();
@@ -1130,9 +1174,35 @@ async function setupNext(){
 // ============================================================
 // AUTH (login / logout / recovery)
 // ============================================================
+// =========================================================
+// SEGURIDAD: XOR-stream sobre campos sensibles
+// =========================================================
+function xorField(text,keyHex){
+  if(!text)return '';
+  try{
+    const b=new TextEncoder().encode(text);
+    const k=(keyHex.match(/.{2}/g)||[]).map(h=>parseInt(h,16));
+    if(!k.length)return '';
+    return Array.from(b).map((v,i)=>v^k[i%k.length]).map(v=>v.toString(16).padStart(2,'0')).join('');
+  }catch(e){return '';}
+}
+function unxorField(hex,keyHex){
+  if(!hex||hex.length<2)return '';
+  try{
+    const b=(hex.match(/.{2}/g)||[]).map(h=>parseInt(h,16));
+    const k=(keyHex.match(/.{2}/g)||[]).map(h=>parseInt(h,16));
+    if(!k.length)return '';
+    return new TextDecoder().decode(new Uint8Array(b.map((v,i)=>v^k[i%k.length])));
+  }catch(e){return '';}
+}
+
+// ---- Sesión con TTL (30 días) ----
+function setSession(){try{localStorage.setItem('puny_session',JSON.stringify({v:1,exp:Date.now()+30*24*60*60*1000}));}catch(e){}}
+function sessionValid(){try{const s=localStorage.getItem('puny_session');if(!s)return false;if(s==='1')return true;const obj=JSON.parse(s);return !!(obj&&obj.exp&&Date.now()<obj.exp);}catch(e){return false;}}
+
 let loginAttempts=0, lockoutUntil=0;
 
-function showLogin(){
+function showLogin(openNewDevice){
   $('setup-screen').style.display='none';
   $('recovery-screen').classList.remove('open');
   $('sidebar').style.display='none';
@@ -1141,6 +1211,8 @@ function showLogin(){
   applyLogo();
   $('login-user').value='';$('login-pass').value='';
   $('login-error').style.display='none';
+  const nd=$('login-newdevice');
+  if(nd)nd.style.display=openNewDevice?'block':'none';
 }
 
 async function doLogin(){
@@ -1148,12 +1220,17 @@ async function doLogin(){
     const s=Math.ceil((lockoutUntil-Date.now())/1000);
     showLoginError('Demasiados intentos. Esperá '+s+' segundos.');return;
   }
+  if(!USER){
+    showLoginError('Este dispositivo no tiene una cuenta configurada. Usá "Acceder desde otro dispositivo" más abajo.');
+    const nd=$('login-newdevice');if(nd)nd.style.display='block';
+    return;
+  }
   const u=$('login-user').value.trim(), p=$('login-pass').value;
   if(!u||!p){showLoginError('Completá usuario y contraseña');return}
   const hash=await sha256(p);
   if(u.toLowerCase()===USER.username.toLowerCase() && hash===USER.passHash){
     loginAttempts=0;
-    localStorage.setItem('puny_session','1');
+    setSession();
     enterApp();
   }else{
     loginAttempts++;
@@ -1164,6 +1241,8 @@ async function doLogin(){
 function showLoginError(msg){const e=$('login-error');e.textContent=msg;e.style.display='block'}
 
 function doLogout(){
+  stopAutoSync();stopAutoLock();
+  _isLocked=false;const ls=$('lock-screen');if(ls)ls.style.display='none';
   localStorage.removeItem('puny_session');
   Object.values(alertTimers).forEach(t=>clearTimeout(t));alertTimers={};
   showLogin();
@@ -1171,6 +1250,7 @@ function doLogout(){
 }
 
 function enterApp(){
+  setSession();
   $('login-screen').style.display='none';
   $('recovery-screen').classList.remove('open');
   $('setup-screen').style.display='none';
@@ -1181,6 +1261,9 @@ function enterApp(){
   goPage('dashboard');
   startAlertWatcher();
   updateClock();
+  startAutoSync(); // ← sincronización bidireccional automática
+  if(getJBConfig()){setTimeout(()=>{_doPull(false);},800);} // false: respeta versiones, nunca pisa cambios locales no sincronizados
+  startAutoLock();
 }
 
 function refreshUserUI(){
@@ -1190,7 +1273,6 @@ function refreshUserUI(){
 }
 
 // ---- RECOVERY ----
-let recVerifiedEmail=false;
 function showRecovery(){
   $('login-screen').style.display='none';
   $('recovery-screen').classList.add('open');
@@ -1223,6 +1305,7 @@ async function recStep3(){
   USER.passHash=await sha256(p);
   USER.lastUpdate=todayISO();
   saveUser();
+  if(getJBConfig())pushToCloud(); // propagar la nueva contraseña a la nube para otros dispositivos
   toast('Contraseña restablecida correctamente','success');
   showLogin();
 }
@@ -1237,7 +1320,7 @@ function applyLogo(){
 // NAVEGACIÓN
 // ============================================================
 const PAGE_TITLES={dashboard:'Dashboard',contactos:'Contactos',agenda:'Agenda',notas:'Notas',grabaciones:'Grabaciones',monitor:'Monitor Web',comunicaciones:'Comunicaciones',finanzas:'Finanzas',reportes:'Reportes',config:'Configuración'};
-function goPage(page){
+function goPage(page){_activePage=page;
   ['dashboard','contactos','agenda','notas','grabaciones','monitor','comunicaciones','finanzas','reportes','config'].forEach(p=>{
     const el=$('page-'+p);if(el)el.style.display=p===page?'block':'none';
   });
@@ -2044,7 +2127,8 @@ function sendWhatsApp(){
   if(!num){toast('Ingresá un número','error');return}
   const msg=encodeURIComponent($('wa-message').value||'');
   const base=isMobile()?'https://wa.me/':'https://web.whatsapp.com/send?phone=';
-  const url=isMobile()?('https://wa.me/'+num+(msg?'?text='+msg:'')):('https://web.whatsapp.com/send?phone='+num+(msg?'&text='+msg:''));
+  const sep=isMobile()?'?text=':'&text=';
+  const url=base+num+(msg?sep+msg:'');
   window.open(url,'_blank');
 }
 function renderWaContacts(){
@@ -2122,9 +2206,19 @@ async function aiDraftEmail(){
 
 // ---- Integraciones config ----
 function saveIntegrations(){
-  USER.apiKey=$('cfg-apikey').value.trim();
-  USER.apiModel=$('cfg-apimodel').value;
-  USER.waCountry=$('cfg-wacountry').value.trim()||'54';
+  const newApiKey=$('cfg-apikey').value.trim();
+  const newModel=$('cfg-apimodel').value;
+  const newWa=$('cfg-wacountry').value.trim()||'54';
+  // Si el campo de API key está vacío pero había una clave guardada, alertar
+  if(!newApiKey && USER.apiKey){
+    warnModal('⚠️ Vas a borrar la API Key','El campo de API Key está vacío. Esto desactivará los resúmenes IA y Whisper. ¿Confirmás?',function(){
+      USER.apiKey='';USER.apiModel=newModel;USER.waCountry=newWa;USER.lastUpdate=todayISO();saveUser();
+      toast('API Key borrada','warning');
+    });return;
+  }
+  if(newApiKey) USER.apiKey=newApiKey;  // solo actualizar si tiene valor
+  USER.apiModel=newModel;
+  USER.waCountry=newWa;
   USER.lastUpdate=todayISO();saveUser();
   toast('Integraciones guardadas','success');
 }
@@ -2149,8 +2243,18 @@ async function backendFetch(path,opts){
 
 // ---- Config backend ----
 function saveBackend(){
-  USER.backendUrl=$('cfg-backend-url').value.trim();
-  USER.backendToken=$('cfg-backend-token').value.trim();
+  const newUrl=$('cfg-backend-url').value.trim();
+  const newToken=$('cfg-backend-token').value.trim();
+  // Si ambos campos están vacíos y ya había config, alertar
+  if(!newUrl && !newToken && (USER.backendUrl || USER.backendToken)){
+    warnModal('⚠️ Vas a borrar el backend','Ambos campos están vacíos. Esto desactivará el correo real y Whisper. ¿Confirmás?',function(){
+      USER.backendUrl='';USER.backendToken='';USER.lastUpdate=todayISO();saveUser();
+      toast('Backend borrado','warning');
+    });return;
+  }
+  // Solo actualizar si tienen valor (no reemplazar con vacío)
+  if(newUrl) USER.backendUrl=newUrl;
+  if(newToken) USER.backendToken=newToken;
   USER.lastUpdate=todayISO();saveUser();
   toast('Backend guardado','success');
 }
@@ -2415,6 +2519,7 @@ function exportDatosJSON(){
   toast('Backup descargado','success');
 }
 function importDatos(input){
+  if(USER&&USER.configLocked){toast('Configuración bloqueada. Desbloqueá primero para importar.','warning');input.value='';return;}
   const f=input.files[0];if(!f)return;
   const r=new FileReader();
   r.onload=e=>{
@@ -2429,6 +2534,7 @@ function importDatos(input){
   r.readAsText(f);input.value='';
 }
 function confirmImport(){
+  if(USER&&USER.configLocked){toast('Configuración bloqueada','warning');closeModal();return;}
   if(window.__importData){
     DB.contacts=window.__importData.contacts||[];
     DB.events=window.__importData.events||[];
@@ -2449,9 +2555,10 @@ function renderConfig(){
   $('cfg-lastupdate').value=USER.lastUpdate||todayISO();
   let secOpts='';SEC_QUESTIONS.forEach((q,i)=>{secOpts+='<option value="'+i+'" '+(USER.secQuestion===i?'selected':'')+'>'+esc(q)+'</option>'});
   $('cfg-secquestion').innerHTML=secOpts;
-  $('cfg-about-version').textContent='Versión: '+(USER.version||'2.0')+' · Build: 28JUN-V11';
+  $('cfg-about-version').textContent='Versión: '+(USER.version||'2.0')+' · Build: 29JUN-V14';
   $('cfg-about-date').textContent='Última actualización: '+(USER.lastUpdate?fmtFecha(USER.lastUpdate):'—');
   if(USER.jbConfig){$('cfg-jb-apikey').value=USER.jbConfig.apiKey||'';$('cfg-jb-binid').value=USER.jbConfig.binId||''}
+  applyConfigLock();
   if($('cfg-apikey'))$('cfg-apikey').value=USER.apiKey||'';
   if($('cfg-apimodel'))$('cfg-apimodel').value=USER.apiModel||'claude-sonnet-4-6';
   if($('cfg-wacountry'))$('cfg-wacountry').value=USER.waCountry||'54';
@@ -2475,6 +2582,7 @@ async function changePassword(){
   if(np.length<8){toast('La nueva contraseña debe tener al menos 8 caracteres','error');return}
   if(np!==cp){toast('Las contraseñas no coinciden','error');return}
   USER.passHash=await sha256(np);USER.lastUpdate=todayISO();saveUser();
+  if(getJBConfig())pushToCloud(); // propagar la nueva contraseña a la nube para otros dispositivos
   $('cfg-oldpass').value='';$('cfg-newpass').value='';$('cfg-confirmpass').value='';
   $('cfg-strength').style.width='0%';$('cfg-strength-text').textContent='';
   toast('Contraseña actualizada','success');
@@ -2503,86 +2611,468 @@ function saveVersion(){
   saveUser();refreshUserUI();renderConfig();toast('Versión actualizada','success');
 }
 // ============================================================
-// JSONBIN SYNC
+// JSONBIN SYNC — Bidireccional con aislamiento de Agenda
 // ============================================================
 const JB_URL='https://api.jsonbin.io/v3/b/';
 
-function getJBConfig(){return USER.jbConfig||null;}
+// ---- Estado de sync ----
+let _pushTimer    = null;   // debounce timer para push
+let _jbBusy       = false;  // mutex: evita requests concurrentes
+let _lastPushTime = 0;      // timestamp del último push exitoso
+let _lastKnownVer = 0;      // versión remota que ya procesamos
+let _pollInterval = null;   // handle del polling automático
+let _activePage   = 'dashboard'; // página activa para refresh
 
-function saveJBConfig(){
-  const apiKey=$('cfg-jb-apikey').value.trim(),binId=$('cfg-jb-binid').value.trim();
-  USER.jbConfig=(apiKey&&binId)?{apiKey,binId}:null;saveUser();
-  toast('Configuración guardada','success');
-  if(USER.jbConfig){$('jb-status').textContent='Configuración guardada. Usa Probar conexión para verificar.';}
+const SYNC_POLL_MS    = 40000; // poll cada 40 s
+const PUSH_DEBOUNCE_MS = 4000; // push 4 s después del último cambio
+const ECHO_GUARD_MS   = 12000; // no pullear si acabamos de pushear
+
+// Colecciones que se sincronizan
+const SYNC_COLS = ['contacts','events','movements','notes','recordings','webUrls','reports','emailAccounts'];
+
+// ---- Config helpers ----
+function getJBConfig(){return USER&&USER.jbConfig&&USER.jbConfig.apiKey&&USER.jbConfig.binId?USER.jbConfig:null;}
+
+// ---- Status bar ----
+function syncStatus(text,state){
+  const el=$('jb-status');if(el){
+    el.style.color=state==='ok'?'var(--gl)':state==='err'?'var(--er)':'var(--txm)';
+    el.textContent=text;
+  }
+  const tb=$('sync-topbar');if(tb){
+    tb.style.color=state==='ok'?'var(--gl)':state==='err'?'var(--er)':'var(--txm)';
+    tb.textContent=text?((state==='ok'?'☁️ ':'⚠️ ')+new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})):'';
+  }
 }
 
-async function testJBConfig(){
-  const cfg=getJBConfig();
-  if(!cfg){toast('Configuraá la API Key y Bin ID primero','warning');return;}
-  $('jb-status').textContent='Probando...';
+// ---- saveDB: persiste localmente y agenda push ----
+function saveDB(cols){
+  if(!DB._v)DB._v={};
+  const now=Date.now();
+  (cols||SYNC_COLS).forEach(c=>{if(DB[c]!==undefined)DB._v[c]=now;});
+  DB._localVer=now;
+  const serialized=JSON.stringify(DB);
+  // Snapshot de seguridad antes de cada escritura
   try{
-    const r=await fetch(JB_URL+cfg.binId+'/latest',{headers:{'X-Master-Key':cfg.apiKey}});
-    if(r.ok){$('jb-status').style.color='var(--gl)';$('jb-status').textContent='✅ Conexión exitosa';toast('JSONBin conectado','success');}
-    else{throw new Error('HTTP '+r.status);}
-  }catch(e){$('jb-status').style.color='var(--er)';$('jb-status').textContent='❌ Error: '+e.message;toast('Error de conexión','error');}
+    const prev=localStorage.getItem('puny_db_v3');
+    if(prev)localStorage.setItem('puny_db_snap',JSON.stringify({d:prev,ts:Date.now()}));
+  }catch(e){}
+  try{
+    localStorage.setItem('puny_db_v3',serialized);
+  }catch(e){
+    // Típicamente QuotaExceededError (almacenamiento lleno) o modo privado restrictivo
+    console.error('[PUNY] Error al guardar localmente:',e);
+    toast('⚠️ No se pudo guardar localmente (almacenamiento lleno o restringido). Los cambios pueden perderse al cerrar.','error');
+    return; // no programar push de datos potencialmente no persistidos
+  }
+  schedulePush(cols);
 }
 
-let _pushTimer=null;
-let _jbBusy=false;
-
-function schedulePush(){
+// ---- schedulePush: debounce 4 s ----
+function schedulePush(cols){
   if(!getJBConfig())return;
   clearTimeout(_pushTimer);
-  _pushTimer=setTimeout(pushToCloud,5000);
+  _pushTimer=setTimeout(()=>pushToCloud(cols),PUSH_DEBOUNCE_MS);
 }
 
-async function pushToCloud(){
+// ---- pushToCloud: sube a JSONBin con versiones por colección ----
+async function pushToCloud(cols){
+  const cfg=getJBConfig();if(!cfg)return;
+  if(_jbBusy){_pushTimer=setTimeout(()=>pushToCloud(cols),3000);return;}
+  _jbBusy=true;
+  try{
+    const now=Date.now();
+    if(!DB._v)DB._v={};
+    // Marcar las colecciones que se están pusheando
+    (cols||SYNC_COLS).forEach(c=>{if(DB[c]!==undefined&&!DB._v[c])DB._v[c]=now;});
+
+    const payload={};
+    SYNC_COLS.forEach(c=>{payload[c]=DB[c]||[];});
+    payload._v=DB._v;
+    payload.version=now;
+    // Auth para acceso multidispositivo
+    // Auth blindada v2: sig en lugar de passHash, campos cifrados con XOR
+    if(USER&&cfg){
+      const _binShort=cfg.binId.slice(-8);
+      const _encKey=await sha256(USER.passHash+':enc:'+_binShort);
+      const _authSig=await sha256(USER.passHash+':puny:'+_binShort);
+      payload._auth={
+        authV:2,username:USER.username||'',fullName:USER.fullName||'',
+        email:USER.email||'',sig:_authSig,configLocked:!!USER.configLocked,
+        createdAt:USER.createdAt||'',version:USER.version||'2.0',
+        _k:xorField(USER.apiKey||'',_encKey),
+        _bu:xorField(USER.backendUrl||'',_encKey),
+        _bt:xorField(USER.backendToken||'',_encKey),
+        _am:xorField(USER.apiModel||'',_encKey)
+      };
+    }
+
+    const r=await fetch(JB_URL+cfg.binId,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json','X-Master-Key':cfg.apiKey},
+      body:JSON.stringify(payload)
+    });
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    _lastPushTime=now;
+    _lastKnownVer=now;   // ya conocemos esta versión, no la volvemos a pullear
+    syncStatus('↑ '+new Date().toLocaleTimeString('es-AR'),'ok');
+  }catch(e){
+    syncStatus('❌ Push: '+e.message,'err');
+  }finally{_jbBusy=false;}
+}
+
+// ---- pullFromCloud: manual (botón) ----
+async function pullFromCloud(){
+  const cfg=getJBConfig();if(!cfg){toast('Configurá JSONBin primero','warning');return;}
+  if(_jbBusy){toast('Esperando operación anterior...','info');setTimeout(pullFromCloud,2000);return;}
+  await _doPull(true);  // forzar aunque sea igual versión
+}
+
+// ---- _doPull: núcleo de pull con merge inteligente ----
+async function _doPull(force){
   const cfg=getJBConfig();if(!cfg)return;
   if(_jbBusy)return;
   _jbBusy=true;
   try{
-    const payload={contacts:DB.contacts||[],events:DB.events||[],movements:DB.movements||[],notes:DB.notes||[],version:Date.now()};
-    const r=await fetch(JB_URL+cfg.binId,{method:'PUT',headers:{'Content-Type':'application/json','X-Master-Key':cfg.apiKey},body:JSON.stringify(payload)});
-    if(r.ok){const jbSt=$('jb-status');if(jbSt){jbSt.style.color='var(--gl)';jbSt.textContent='↑ Subido: '+new Date().toLocaleTimeString('es-AR');}}
-    else{throw new Error('HTTP '+r.status);}
-  }catch(e){const jbSt=$('jb-status');if(jbSt){jbSt.style.color='var(--er)';jbSt.textContent='❌ Error al subir: '+e.message;}}
-  finally{_jbBusy=false;}
+    const r=await fetch(JB_URL+cfg.binId+'/latest',{headers:{'X-Master-Key':cfg.apiKey}});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const data=await r.json();
+    const rem=data.record||data;
+    const remVer=rem.version||0;
+
+    // Si ya procesamos esta versión y no es forzado, saltar
+    if(!force && remVer<=_lastKnownVer)return;
+
+    // Merge por colección: solo sobreescribir si la versión remota es >= local
+    const remV=rem._v||{};
+    const locV=DB._v||{};
+    let changed=false;
+
+    SYNC_COLS.forEach(col=>{
+      if(rem[col]===undefined)return;           // campo ausente en remoto → no tocar
+      const rv=remV[col]||remVer||0;
+      const lv=locV[col]||DB._localVer||0;
+      // Dar prioridad a lo local si es más nuevo (aislamiento)
+      if(force || rv>=lv){
+        DB[col]=rem[col];
+        if(!DB._v)DB._v={};
+        DB._v[col]=rv;
+        changed=true;
+      }
+    });
+
+    if(changed){
+      _lastKnownVer=remVer;
+      DB._localVer=DB._localVer||remVer;
+      try{
+        const prevSnap=localStorage.getItem('puny_db_v3');
+        if(prevSnap)localStorage.setItem('puny_db_snap',JSON.stringify({d:prevSnap,ts:Date.now()}));
+      }catch(e){}
+      localStorage.setItem('puny_db_v3',JSON.stringify(DB));
+      _refreshCurrentView();
+      syncStatus('↓ '+new Date().toLocaleTimeString('es-AR'),'ok');
+      if(force)toast('Datos sincronizados desde la nube','success');
+    }else if(force){
+      toast('Ya estás al día','info');
+    }
+    // Sincronizar config de usuario desde _auth (soporta V1 y V2)
+    // Blindaje: solo si el username remoto coincide — evita mezclar credenciales si el bin no corresponde
+    const _pcfg=getJBConfig();
+    if(rem._auth&&USER&&_pcfg&&(rem._auth.username||'').toLowerCase()===(USER.username||'').toLowerCase()){
+      let uc=false;
+      if(rem._auth.authV===2){
+        const _pek=await sha256(USER.passHash+':enc:'+_pcfg.binId.slice(-8));
+        const _pfields=[['apiKey','_k'],['backendUrl','_bu'],['backendToken','_bt'],['apiModel','_am']];
+        _pfields.forEach(([f,enc])=>{const v=unxorField(rem._auth[enc]||'',_pek);if(v&&v!==USER[f]){USER[f]=v;uc=true;}});
+      }else{
+        ['apiKey','backendUrl','backendToken','apiModel'].forEach(f=>{if(rem._auth[f]!==undefined&&rem._auth[f]!==USER[f]){USER[f]=rem._auth[f];uc=true;}});
+      }
+      // Blindaje: el bloqueo de configuración debe ser consistente entre dispositivos
+      if(typeof rem._auth.configLocked==='boolean'&&rem._auth.configLocked!==!!USER.configLocked){
+        USER.configLocked=rem._auth.configLocked;uc=true;
+      }
+      if(uc){saveUser();applyConfigLock();}
+    }
+  }catch(e){
+    syncStatus('❌ Pull: '+e.message,'err');
+    if(force)toast('Error al descargar: '+e.message,'error');
+  }finally{_jbBusy=false;}
 }
 
-async function pullFromCloud(){
-  const cfg=getJBConfig();if(!cfg){toast('Configurá JSONBin primero','warning');return;}
-  if(_jbBusy){toast('Esperando operación anterior...','info');setTimeout(pullFromCloud,2000);return;}
-  _jbBusy=true;
+// ---- Auto-poll ----
+function startAutoSync(){
+  stopAutoSync();
+  if(!getJBConfig())return;
+  // Primer poll a los 5 s del login (esperar que termine cualquier push inicial)
+  setTimeout(_autoPoll,5000);
+  _pollInterval=setInterval(_autoPoll,SYNC_POLL_MS);
+}
+function stopAutoSync(){
+  clearInterval(_pollInterval);_pollInterval=null;
+  clearTimeout(_pushTimer);_pushTimer=null;
+}
+
+async function _autoPoll(){
+  if(!getJBConfig()||!USER)return;
+  // Esperar si acabamos de pushear (anti-echo)
+  if(Date.now()-_lastPushTime<ECHO_GUARD_MS)return;
+  await _doPull(false);
+}
+
+// ---- Refresh de la vista activa tras pull ----
+function _refreshCurrentView(){
+  try{
+    if(_activePage==='dashboard')renderDashboard();
+    else if(_activePage==='agenda')renderAgenda();
+    else if(_activePage==='contactos')renderContacts();
+    else if(_activePage==='notas')renderNotas();
+    else if(_activePage==='finanzas')renderFinanzas();
+    else if(_activePage==='grabaciones')renderGrabaciones();
+    else if(_activePage==='reportes')renderReportes();
+  }catch(e){}
+}
+
+// ---- testJBConfig: prueba de conexión ----
+async function testJBConfig(){
+  const cfg=getJBConfig();
+  if(!cfg){toast('Configurá la API Key y Bin ID primero','warning');return;}
+  syncStatus('Probando...','');
   try{
     const r=await fetch(JB_URL+cfg.binId+'/latest',{headers:{'X-Master-Key':cfg.apiKey}});
-    if(!r.ok){throw new Error('HTTP '+r.status);}
-    const data=await r.json();
-    const remote=data.record||data;
-    if(remote.contacts)DB.contacts=remote.contacts;
-    if(remote.events)DB.events=remote.events;
-    if(remote.movements)DB.movements=remote.movements;
-    if(remote.notes)DB.notes=remote.notes;
-    localStorage.setItem('puny_db_v3',JSON.stringify(DB));
-    const jbSt=$('jb-status');if(jbSt){jbSt.style.color='var(--gl)';jbSt.textContent='↓ Descargado: '+new Date().toLocaleTimeString('es-AR');}
-    toast('Datos sincronizados desde la nube','success');
-    goPage('dashboard');
-  }catch(e){toast('Error al descargar: '+e.message,'error');}
-  finally{_jbBusy=false;}
+    if(r.ok){syncStatus('✅ Conexión exitosa','ok');toast('JSONBin conectado','success');}
+    else{throw new Error('HTTP '+r.status);}
+  }catch(e){syncStatus('❌ Error: '+e.message,'err');toast('Error de conexión','error');}
 }
+
+// ---- saveJBConfig: guarda config con protección ----
+function saveJBConfig(){
+  const apiKey=$('cfg-jb-apikey').value.trim(),binId=$('cfg-jb-binid').value.trim();
+  if(!apiKey && !binId){
+    warnModal('Sin cambios','Los campos están vacíos. La configuración existente se mantiene sin cambios.',null);return;
+  }
+  if(apiKey && binId){
+    USER.jbConfig={apiKey,binId};
+    saveUser();
+    syncStatus('Configuración guardada. Usá Probar conexión para verificar.','');
+    toast('Configuración guardada','success');
+    startAutoSync(); // activar polling con la nueva config
+  } else {
+    warnModal('⚠️ Configuración incompleta','Debés ingresar tanto la API Key como el Bin ID. Si guardás con un campo vacío, la sincronización quedará desactivada. ¿Confirmás?',function(){
+      USER.jbConfig=(apiKey&&binId)?{apiKey,binId}:null;saveUser();
+      stopAutoSync();
+      toast('Configuración guardada','success');
+      syncStatus('Sincronización desactivada','err');
+    });
+  }
+}
+
+// ---- clearData / resetApp ----
 function clearData(){
   openModal('Borrar datos','<div style="font-size:13px;color:var(--txm)">Se eliminarán <strong style="color:var(--er)">todos</strong> los contactos, eventos y movimientos. Tu cuenta y configuración se mantienen. ¿Continuar?</div>',
     '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-danger btn-sm" onclick="confirmClearData()">🗑️ Borrar todo</button>');
 }
-function confirmClearData(){DB={contacts:[],events:[],movements:[]};saveDB();closeModal();goPage('dashboard');toast('Datos borrados','info')}
+function confirmClearData(){
+  SYNC_COLS.forEach(c=>{DB[c]=[];});
+  DB._v={};DB._localVer=Date.now();
+  saveDB();closeModal();goPage('dashboard');toast('Datos borrados','info');
+}
 function resetApp(){
   openModal('Resetear aplicación','<div style="font-size:13px;color:var(--txm)">⚠️ Esto eliminará <strong style="color:var(--er)">absolutamente todo</strong>: tu cuenta, configuración y datos. La app volverá a la configuración inicial. Esta acción es irreversible.</div>',
     '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-danger btn-sm" onclick="confirmResetApp()">⚠️ Resetear todo</button>');
 }
 function confirmResetApp(){
-  localStorage.removeItem('puny_user_v2');localStorage.removeItem('puny_db_v3');
-  localStorage.removeItem('puny_session');
-  USER=null;DB={contacts:[],events:[],movements:[]};
-  closeModal();startSetup();toast('Aplicación reseteada','info');
+  warnModal('🔴 RESETEAR TODA LA APLICACIÓN','Esta acción BORRARÁ TODO: usuario, claves, contactos, eventos y datos. Es irreversible. ¿Estás absolutamente seguro?',function(){
+    stopAutoSync();
+    localStorage.removeItem('puny_user_v2');localStorage.removeItem('puny_db_v3');
+    localStorage.removeItem('puny_session');
+    USER=null;DB={contacts:[],events:[],movements:[]};
+    closeModal();startSetup();toast('Aplicación reseteada','info');
+  },'danger');
+}
+
+
+
+// =========================================================
+// SEGURIDAD: Auto-bloqueo por inactividad (20 min)
+// =========================================================
+const LOCK_TIMEOUT_MS = 20 * 60 * 1000;
+let _lastActivity = Date.now();
+let _lockTimer = null;
+let _isLocked = false;
+let _activityListenersBound = false;
+
+function updateActivity(){if(!_isLocked)_lastActivity=Date.now();}
+
+function startAutoLock(){
+  if(!_activityListenersBound){
+    ['click','keydown','touchstart','scroll','mousemove'].forEach(ev=>{
+      document.addEventListener(ev,updateActivity,{passive:true});
+    });
+    _activityListenersBound=true;
+  }
+  _lastActivity=Date.now(); // resetear el contador al (re)entrar
+  clearInterval(_lockTimer);
+  _lockTimer=setInterval(()=>{
+    if(!_isLocked&&USER&&Date.now()-_lastActivity>LOCK_TIMEOUT_MS)showLockScreen();
+  },60000);
+}
+
+function stopAutoLock(){
+  clearInterval(_lockTimer);_lockTimer=null;_isLocked=false;
+}
+
+function showLockScreen(){
+  _isLocked=true;
+  $('lock-screen').style.display='flex';
+  $('lock-pass').value='';
+  const le=$('lock-err');if(le)le.style.display='none';
+}
+
+async function doUnlock(){
+  const p=$('lock-pass').value;
+  const le=$('lock-err');
+  if(!p){if(le){le.textContent='Ingresá tu contraseña';le.style.display='block';}return;}
+  const hash=await sha256(p);
+  if(USER&&hash===USER.passHash){
+    _isLocked=false;_lastActivity=Date.now();
+    $('lock-screen').style.display='none';
+    if(le)le.style.display='none';
+    $('lock-pass').value='';
+    setSession();
+  }else{
+    if(le){le.textContent='Contraseña incorrecta';le.style.display='block';}
+  }
+}
+
+// ============================================================
+// ACCESO MULTIDISPOSITIVO
+// ============================================================
+function toggleNewDevice(){
+  const nd=$('login-newdevice');
+  if(!nd)return;
+  nd.style.display=nd.style.display==='none'?'block':'none';
+}
+
+async function doLoginNewDevice(){
+  if(Date.now()<lockoutUntil){
+    const s=Math.ceil((lockoutUntil-Date.now())/1000);
+    showLoginError('Demasiados intentos. Esperá '+s+' segundos.');return;
+  }
+  const u=$('login-user').value.trim(),p=$('login-pass').value;
+  const apiKey=$('nd-apikey')?$('nd-apikey').value.trim():'';
+  const binId=$('nd-binid')?$('nd-binid').value.trim():'';
+  if(!u||!p){showLoginError('Completá usuario y contraseña');return;}
+  if(!apiKey||!binId){showLoginError('Completá la API Key y el Bin ID');return;}
+  const btn=document.querySelector('#login-newdevice .btn.btn-primary');
+  if(btn){btn.disabled=true;btn.textContent='Conectando...';}
+  showLoginError('');
+  try{
+    const r=await fetch('https://api.jsonbin.io/v3/b/'+binId+'/latest',{
+      headers:{'X-Master-Key':apiKey}
+    });
+    if(!r.ok)throw new Error('HTTP '+r.status+' — Verificá la API Key y el Bin ID');
+    const data=await r.json();
+    const rem=data.record||data;
+    if(!rem._auth)throw new Error('El bin no contiene datos PUNY');
+    const hash=await sha256(p);
+    const _binShort=binId.slice(-8);
+    // Verificación: authV:2 (sig) o V1 (passHash directo)
+    let _authOk=false;
+    if(rem._auth.authV===2){
+      const sig=await sha256(hash+':puny:'+_binShort);
+      _authOk=(sig===rem._auth.sig);
+    }else{
+      if(!rem._auth.passHash)throw new Error('Formato de auth no reconocido');
+      _authOk=(rem._auth.passHash===hash);
+    }
+    if((rem._auth.username||'').toLowerCase()!==u.toLowerCase()||!_authOk){
+      loginAttempts++;
+      if(loginAttempts>=5){lockoutUntil=Date.now()+30000;loginAttempts=0;throw new Error('5 intentos fallidos. Bloqueado 30 seg.');}
+      throw new Error('Usuario o contraseña incorrectos ('+loginAttempts+'/5)');
+    }
+    loginAttempts=0;
+    // Restaurar campos cifrados o planos según versión
+    let _apiKey='',_bu='',_bt='',_am='';
+    if(rem._auth.authV===2){
+      const _ek=await sha256(hash+':enc:'+_binShort);
+      _apiKey=unxorField(rem._auth._k||'',_ek);
+      _bu=unxorField(rem._auth._bu||'',_ek);
+      _bt=unxorField(rem._auth._bt||'',_ek);
+      _am=unxorField(rem._auth._am||'',_ek);
+    }else{
+      _apiKey=rem._auth.apiKey||'';_bu=rem._auth.backendUrl||'';
+      _bt=rem._auth.backendToken||'';_am=rem._auth.apiModel||'';
+    }
+    USER={
+      username:rem._auth.username,passHash:hash,
+      fullName:rem._auth.fullName||'',email:rem._auth.email||'',
+      apiKey:_apiKey,backendUrl:_bu,backendToken:_bt,
+      apiModel:_am||'claude-sonnet-4-6',
+      secQuestion:0,secAnswerHash:'',configLocked:!!rem._auth.configLocked,
+      createdAt:rem._auth.createdAt||new Date().toISOString(),
+      lastUpdate:todayISO(),jbConfig:{apiKey,binId},fbConfig:null,
+      version:rem._auth.version||'2.0'
+    };
+    saveUser();
+    enterApp();
+  }catch(e){
+    showLoginError(e.message);
+    if(btn){btn.disabled=false;btn.textContent='🔑 Ingresar con JSONBin';}
+  }
+}
+
+
+// =========================================================
+// SEGURIDAD: Bloqueo de configuración crítica
+// =========================================================
+function applyConfigLock(){
+  const locked=!!(USER&&USER.configLocked);
+  // Campos sensibles: credenciales, sync, identidad de cuenta, recuperación, versión
+  ['cfg-apikey','cfg-backend-url','cfg-backend-token','cfg-jb-apikey','cfg-jb-binid',
+   'cfg-username','cfg-oldpass','cfg-newpass','cfg-confirmpass',
+   'cfg-secquestion','cfg-secanswer','cfg-secpass',
+   'cfg-version','cfg-lastupdate'].forEach(id=>{
+    const el=$(id);if(el){el.disabled=locked;el.style.opacity=locked?'0.5':'1';}
+  });
+  // Botones de acción crítica (incluye importar backup: sobreescribe toda la base de datos)
+  const saveBtns=['btn-save-api','btn-save-backend','btn-save-jb','btn-save-creds','btn-import-json'];
+  saveBtns.forEach(id=>{const b=$(id);if(b)b.disabled=locked;});
+  // Actualizar botón de candado
+  const btn=$('btn-config-lock');
+  if(btn)btn.innerHTML=locked?'🔒 Config bloqueada — click para abrir':'🔓 Bloquear configuración';
+  if(btn)btn.className=locked?'btn btn-danger btn-sm':'btn btn-secondary btn-sm';
+}
+
+async function toggleConfigLock(){
+  if(!USER)return;
+  if(!USER.configLocked){
+    USER.configLocked=true;saveUser();applyConfigLock();
+    if(getJBConfig())pushToCloud(); // propagar el bloqueo de inmediato a otros dispositivos
+    toast('Configuración bloqueada 🔒','info');
+  }else{
+    openModal('Desbloquear configuración',
+      '<div class="form-group"><label class="form-label">Contraseña actual</label>'+
+      '<div class="pass-wrap"><input class="form-input" type="password" id="cfglock-pass" placeholder="Tu contraseña" onkeydown="if(event.key===&quot;Enter&quot;)confirmCfgUnlock()">'+
+      '<button class="pass-toggle" type="button" onclick="togglePass(&quot;cfglock-pass&quot;,this)">👁</button></div></div>'+
+      '<div id="cfglock-err" style="color:var(--er);font-size:12px;display:none;margin-top:4px"></div>',
+      '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancelar</button>'+
+      '<button class="btn btn-primary btn-sm" onclick="confirmCfgUnlock()">🔓 Desbloquear</button>'
+    );
+    setTimeout(()=>{const i=$('cfglock-pass');if(i)i.focus();},100);
+  }
+}
+
+async function confirmCfgUnlock(){
+  const p=$('cfglock-pass');
+  if(!p||!p.value){const e=$('cfglock-err');if(e){e.textContent='Ingresá tu contraseña';e.style.display='block';}return;}
+  const hash=await sha256(p.value);
+  if(USER&&hash===USER.passHash){
+    USER.configLocked=false;saveUser();closeModal();applyConfigLock();
+    if(getJBConfig())pushToCloud(); // propagar el desbloqueo de inmediato a otros dispositivos
+    toast('Configuración desbloqueada 🔓','success');
+  }else{
+    const e=$('cfglock-err');if(e){e.textContent='Contraseña incorrecta';e.style.display='block';}
+  }
 }
 
 // ============================================================
@@ -2595,13 +3085,70 @@ window.addEventListener('DOMContentLoaded',()=>{
   $('rec-email').addEventListener('keydown',e=>{if(e.key==='Enter')recStep1()});
   $('rec-answer').addEventListener('keydown',e=>{if(e.key==='Enter')recStep2()});
   if(!USER){
-    startSetup();
+    applyLogo();
+    showLogin(true); // sin usuario local → panel nuevo dispositivo abierto
   }else{
     applyLogo();
-    if(localStorage.getItem('puny_session')){enterApp()}
-    else{showLogin()}
+    if(sessionValid()){enterApp()}
+    else{showLogin(false);}
   }
 });
+
+// ============================================================
+// SISTEMA DE ALERTAS PARA CAMBIOS CRÍTICOS
+// ============================================================
+function warnModal(title, message, onConfirm, variant){
+  // Eliminar modal previo si existe
+  const prev=document.getElementById('warn-modal-overlay');if(prev)prev.remove();
+  const isDanger=variant==='danger';
+  const overlay=document.createElement('div');
+  overlay.id='warn-modal-overlay';
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  const box=document.createElement('div');
+  box.style.cssText='background:var(--card,#1a1a1a);border:2px solid '+(isDanger?'#e53e3e':'#d69e2e')+';border-radius:14px;padding:28px 24px;max-width:420px;width:100%;color:var(--tx,#fff);font-family:inherit;';
+  const icon=isDanger?'🔴':'⚠️';
+  box.innerHTML='<div style="font-size:22px;margin-bottom:12px">'+icon+' '+esc(title)+'</div>'+
+    '<div style="font-size:14px;color:var(--txm,#aaa);margin-bottom:20px;line-height:1.5">'+esc(message)+'</div>'+
+    (onConfirm?
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">'+
+      '<button id="wm-cancel" style="flex:1;padding:10px;border-radius:8px;border:none;background:var(--bg2,#2a2a2a);color:var(--tx,#fff);cursor:pointer;font-size:14px">Cancelar</button>'+
+      '<button id="wm-confirm" style="flex:1;padding:10px;border-radius:8px;border:none;background:'+(isDanger?'#e53e3e':'#d69e2e')+';color:#fff;cursor:pointer;font-size:14px;font-weight:600">'+(isDanger?'Sí, resetear':'Confirmar')+'</button>'+
+      '</div>'
+      :
+      '<button id="wm-ok" style="width:100%;padding:10px;border-radius:8px;border:none;background:var(--ac,#d4a017);color:#fff;cursor:pointer;font-size:14px;font-weight:600">Entendido</button>'
+    );
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',function(e){if(e.target===overlay){overlay.remove();}});
+  if(onConfirm){
+    document.getElementById('wm-cancel').onclick=function(){overlay.remove();};
+    document.getElementById('wm-confirm').onclick=function(){overlay.remove();onConfirm();};
+  } else {
+    document.getElementById('wm-ok').onclick=function(){overlay.remove();};
+  }
+}
+
 </script>
+
+<!-- LOCK SCREEN (auto-bloqueo por inactividad) -->
+<div id="lock-screen" style="display:none;position:fixed;inset:0;background:rgba(12,11,8,0.97);z-index:99998;align-items:center;justify-content:center;flex-direction:column">
+  <div style="text-align:center;color:var(--gl);margin-bottom:24px">
+    <div style="font-size:48px">🔒</div>
+    <div style="font-size:24px;font-weight:800;letter-spacing:6px;margin-top:8px;color:var(--gl)">PUNY</div>
+    <div style="font-size:12px;color:var(--txm);margin-top:6px;letter-spacing:1px">Sesión bloqueada por inactividad</div>
+  </div>
+  <div style="width:280px;max-width:90vw">
+    <div class="pass-wrap" style="margin-bottom:10px">
+      <input class="form-input" type="password" id="lock-pass" placeholder="Contraseña para desbloquear" onkeydown="if(event.key==='Enter')doUnlock()">
+      <button class="pass-toggle" type="button" onclick="togglePass('lock-pass',this)">👁</button>
+    </div>
+    <button class="btn btn-primary" style="width:100%;padding:13px;font-size:14px;letter-spacing:1px" onclick="doUnlock()">🔓 Desbloquear</button>
+    <div id="lock-err" style="display:none;color:var(--er);font-size:12px;margin-top:8px;text-align:center;padding:6px 10px;background:rgba(255,77,79,.1);border-radius:6px"></div>
+    <div style="font-size:11px;color:var(--txd);margin-top:16px;text-align:center">
+      ¿No recordás la contraseña?
+      <a onclick="if(confirm('¿Cerrar sesión?')){doLogout();$('lock-screen').style.display='none';}" style="color:var(--gd);cursor:pointer">Cerrar sesión</a>
+    </div>
+  </div>
+</div>
 </body>
 </html>
