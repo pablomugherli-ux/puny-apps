@@ -976,6 +976,15 @@ let snoozed={};
 
 // ---- UTILIDADES ----
 function $(id){return document.getElementById(id)}
+// Limpia credenciales para headers HTTP: quita espacios de borde, saltos de línea,
+// zero-width y CUALQUIER caracter fuera de ISO-8859-1 (Latin-1) que rompe fetch.
+function sanitizeCred(s){
+  if(!s)return '';
+  return String(s)
+    .replace(/[\u200B-\u200D\uFEFF]/g,'') // zero-width y BOM
+    .replace(/\s+/g,'')                    // TODO espacio interno/borde (las keys no llevan espacios)
+    .replace(/[^\x00-\xFF]/g,'');          // fuera de Latin-1
+}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
 function fmtMoney(n){n=Number(n)||0;return'$'+n.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}
@@ -1767,7 +1776,7 @@ async function idbDel(key){const db=await idbOpen();return new Promise((res,rej)
 // ---- API ANTHROPIC (directa desde navegador) ----
 async function callClaude(messages,opts){
   opts=opts||{};
-  const key=USER&&USER.apiKey;
+  const key=sanitizeCred(USER&&USER.apiKey);
   if(!key)throw new Error('NO_API_KEY');
   const body={
     model:opts.model||(USER.apiModel||'claude-sonnet-4-6'),
@@ -2283,7 +2292,7 @@ async function aiDraftEmail(){
 
 // ---- Integraciones config ----
 function saveIntegrations(){
-  const newApiKey=$('cfg-apikey').value.trim();
+  const newApiKey=sanitizeCred($('cfg-apikey').value);
   const newModel=$('cfg-apimodel').value;
   const newWa=$('cfg-wacountry').value.trim()||'54';
   // Si el campo de API key está vacío pero había una clave guardada, alertar
@@ -2710,7 +2719,10 @@ const ECHO_GUARD_MS   = 12000; // no pullear si acabamos de pushear
 const SYNC_COLS = ['contacts','events','movements','notes','recordings','webUrls','reports','emailAccounts'];
 
 // ---- Config helpers ----
-function getJBConfig(){return USER&&USER.jbConfig&&USER.jbConfig.apiKey&&USER.jbConfig.binId?USER.jbConfig:null;}
+function getJBConfig(){
+  if(!(USER&&USER.jbConfig&&USER.jbConfig.apiKey&&USER.jbConfig.binId))return null;
+  return {apiKey:sanitizeCred(USER.jbConfig.apiKey),binId:sanitizeCred(USER.jbConfig.binId)};
+}
 
 // ---- Status bar ----
 function syncStatus(text,state){
@@ -2925,7 +2937,7 @@ async function testJBConfig(){
 
 // ---- saveJBConfig: guarda config con protección ----
 function saveJBConfig(){
-  const apiKey=$('cfg-jb-apikey').value.trim(),binId=$('cfg-jb-binid').value.trim();
+  const apiKey=sanitizeCred($('cfg-jb-apikey').value),binId=sanitizeCred($('cfg-jb-binid').value);
   if(!apiKey && !binId){
     warnModal('Sin cambios','Los campos están vacíos. La configuración existente se mantiene sin cambios.',null);return;
   }
@@ -3038,8 +3050,8 @@ async function doLoginNewDevice(){
     showLoginError('Demasiados intentos. Esperá '+s+' segundos.');return;
   }
   const u=$('login-user').value.trim(),p=$('login-pass').value;
-  const apiKey=$('nd-apikey')?$('nd-apikey').value.trim():'';
-  const binId=$('nd-binid')?$('nd-binid').value.trim():'';
+  const apiKey=$('nd-apikey')?sanitizeCred($('nd-apikey').value):'';
+  const binId=$('nd-binid')?sanitizeCred($('nd-binid').value):'';
   if(!u||!p){showLoginError('Completá usuario y contraseña');return;}
   if(!apiKey||!binId){showLoginError('Completá la API Key y el Bin ID');return;}
   const btn=document.querySelector('#login-newdevice .btn.btn-primary');
