@@ -976,14 +976,12 @@ let snoozed={};
 
 // ---- UTILIDADES ----
 function $(id){return document.getElementById(id)}
-// Limpia credenciales para headers HTTP: quita espacios de borde, saltos de línea,
-// zero-width y CUALQUIER caracter fuera de ISO-8859-1 (Latin-1) que rompe fetch.
+// Limpia credenciales (JSONBin master key, Bin ID, API key Anthropic) para headers HTTP.
+// Las credenciales SOLO contienen estos caracteres; cualquier otra cosa (backtick, comillas,
+// espacios, zero-width, saltos de línea, acentos) es basura de copiado y se elimina.
 function sanitizeCred(s){
   if(!s)return '';
-  return String(s)
-    .replace(/[\u200B-\u200D\uFEFF]/g,'') // zero-width y BOM
-    .replace(/\s+/g,'')                    // TODO espacio interno/borde (las keys no llevan espacios)
-    .replace(/[^\x00-\xFF]/g,'');          // fuera de Latin-1
+  return String(s).replace(/[^A-Za-z0-9$._\/\-+=:]/g,'');
 }
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
@@ -1966,20 +1964,8 @@ function startSpeechRecognition(){
   recState.srLangIdx=0;
   recState.srGotResult=false;
   recState.srDead=false;
-  _createRecog();
-  // Watchdog: si a los 10s no llegó NADA (ni interim), avisar al usuario
-  clearTimeout(recState.srWatchdog);
-  recState.srWatchdog=setTimeout(()=>{
-    if(recState.recording&&!recState.srGotResult&&!recState.srDead){
-      setRecLiveStatus('· sin texto aún: hablá cerca del micrófono o verificá conexión a internet',true);
-    }
-  },10000);
-}
-function _createRecog(){
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR||recState.srDead)return;
-  // Detener instancia previa si quedó viva
-  if(recState.recog){try{recState.recog.onend=null;recState.recog.stop()}catch(e){}}
+  // UNA sola instancia, reutilizada con start() en cada onend.
+  // Crear instancias nuevas mientras MediaRecorder tiene el micro rompe la captura en Android.
   const recog=new SR();
   recog.lang=recState.srLangs[recState.srLangIdx]||'es';
   recog.continuous=true;recog.interimResults=true;
@@ -1998,25 +1984,26 @@ function _createRecog(){
     if(box){box.innerHTML=esc(recState.finalText)+'<span class="interim">'+esc(interim)+'</span>';box.scrollTop=box.scrollHeight}
   };
   recog.onend=()=>{
+    // Reanudar la MISMA instancia (Chrome corta la sesión cada tanto)
     if(recState.recording&&!recState.srDead){
-      // Chrome corta la sesión periódicamente: recrear con leve delay
-      setTimeout(()=>{ if(recState.recording&&!recState.srDead)_createRecog() },300);
+      try{recog.start()}catch(e){ setTimeout(()=>{try{recog.start()}catch(e2){}},250); }
     }
   };
   recog.onerror=ev=>{
     const err=ev.error||'';
-    if(err==='no-speech'||err==='aborted')return; // benignos, onend reinicia
+    if(err==='no-speech'||err==='aborted')return; // benignos: onend reanuda
     if(err==='language-not-supported'){
-      // Probar siguiente variante de idioma (Edge suele fallar con es-AR)
+      // Cambiar idioma sobre la MISMA instancia y reanudar (no recrear)
       recState.srLangIdx++;
       if(recState.srLangIdx<recState.srLangs.length){
-        setTimeout(()=>{ if(recState.recording)_createRecog() },200);
+        recog.lang=recState.srLangs[recState.srLangIdx];
+        setRecLiveStatus('· probando idioma '+recog.lang);
       }else{
         recState.srDead=true;
-        setRecLiveStatus('· este navegador no soporta transcripción en vivo (usá Chrome, o transcribí luego con el servidor 🌐)',true);
+        setRecLiveStatus('· este navegador no soporta transcripción en vivo (probá Chrome)',true);
         toast('Transcripción en vivo no disponible en este navegador. El audio se graba igual.','warning');
       }
-      return;
+      return; // onend reanudará con el nuevo lang
     }
     if(err==='not-allowed'||err==='service-not-allowed'){
       recState.srDead=true;
@@ -2026,20 +2013,22 @@ function _createRecog(){
     }
     if(err==='network'){
       setRecLiveStatus('· error de red del motor de voz, reintentando...',true);
-      return; // onend hará el reinicio
+      return; // onend reanuda
     }
-    if(err==='audio-capture'){
-      setRecLiveStatus('· conflicto de micrófono: la transcripción en vivo no puede correr junto a la grabación en este equipo',true);
-      recState.srDead=true;
-      return;
-    }
-    setRecLiveStatus('· error del motor: '+err,true);
+    // Cualquier otro error: NO marcar como muerto, dejar que onend reintente
+    setRecLiveStatus('· reintentando ('+err+')...',true);
   };
   try{recog.start()}catch(e){
-    // InvalidStateError u otro: reintentar una vez
     setTimeout(()=>{try{recog.start()}catch(e2){}},400);
   }
   recState.recog=recog;
+  // Watchdog informativo (no destructivo): solo avisa, no corta nada
+  clearTimeout(recState.srWatchdog);
+  recState.srWatchdog=setTimeout(()=>{
+    if(recState.recording&&!recState.srGotResult&&!recState.srDead){
+      setRecLiveStatus('· sin texto aún: hablá cerca del micrófono o revisá la conexión',true);
+    }
+  },12000);
 }
 async function stopRecording(){
   if(!recState.recording)return;
