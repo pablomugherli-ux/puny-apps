@@ -804,7 +804,7 @@ textarea.form-input{resize:vertical}
           </div>
         </div>
         <div class="rec-live-box" id="rec-live-box" style="display:none">
-          <div class="rec-live-label">Transcripción en vivo <span id="rec-live-status" style="font-weight:400;color:var(--txd);font-size:10px"></span></div>
+          <div class="rec-live-label">Transcripción en vivo</div>
           <div class="rec-live-text" id="rec-live-text"></div>
         </div>
         <div class="rec-controls">
@@ -1933,8 +1933,16 @@ function renderRecordingsList(){
 async function startRecording(){
   if(recState.recording)return;
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){toast('El navegador no permite acceder al micrófono','error');return}
+  try{
+    recState.stream=await navigator.mediaDevices.getUserMedia({audio:true});
+  }catch(e){toast('No se pudo acceder al micrófono. Revisá permisos.','error');return}
   recState.chunks=[];recState.finalText='';recState.interimText='';recState.id=uid();
-  // Marcar grabando y preparar UI ANTES de arrancar nada de audio
+  let mime='audio/webm';
+  if(window.MediaRecorder&&!MediaRecorder.isTypeSupported('audio/webm')){mime=MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':''}
+  try{recState.mediaRec=mime?new MediaRecorder(recState.stream,{mimeType:mime}):new MediaRecorder(recState.stream)}
+  catch(e){recState.mediaRec=new MediaRecorder(recState.stream)}
+  recState.mediaRec.ondataavailable=e=>{if(e.data&&e.data.size)recState.chunks.push(e.data)};
+  recState.mediaRec.start(1000);
   recState.recording=true;recState.startTs=Date.now();
   $('rec-dot').classList.add('active');
   $('rec-state-label').textContent='Grabando...';
@@ -1943,51 +1951,14 @@ async function startRecording(){
   $('rec-live-box').style.display='block';
   $('rec-live-text').innerHTML='';
   recState.timerInt=setInterval(()=>{$('rec-timer').textContent=fmtDur((Date.now()-recState.startTs)/1000)},500);
-  // 1) PRIMERO el reconocimiento de voz: en Android debe agarrar el micrófono antes
-  //    que MediaRecorder, o queda "escuchando" sin recibir audio.
   startSpeechRecognition();
-  // 2) DESPUÉS, con un pequeño respiro, la grabación de audio sobre el mismo micrófono.
-  setTimeout(async()=>{
-    if(!recState.recording)return; // por si detuvo antes
-    try{
-      recState.stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    }catch(e){
-      // El audio no se pudo grabar, pero la transcripción en vivo puede seguir andando.
-      toast('No se pudo grabar el audio, pero la transcripción sigue activa.','warning');
-      return;
-    }
-    if(!recState.recording){ // detuvo mientras pedía permiso
-      try{recState.stream.getTracks().forEach(t=>t.stop())}catch(_){}
-      return;
-    }
-    let mime='audio/webm';
-    if(window.MediaRecorder&&!MediaRecorder.isTypeSupported('audio/webm')){mime=MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':''}
-    try{recState.mediaRec=mime?new MediaRecorder(recState.stream,{mimeType:mime}):new MediaRecorder(recState.stream)}
-    catch(e){recState.mediaRec=new MediaRecorder(recState.stream)}
-    recState.mediaRec.ondataavailable=e=>{if(e.data&&e.data.size)recState.chunks.push(e.data)};
-    recState.mediaRec.start(1000);
-  },350);
-}
-function setRecLiveStatus(msg,isErr){
-  const s=$('rec-live-status');
-  if(s){s.textContent=msg||'';s.style.color=isErr?'#e05555':'var(--txd)'}
 }
 function startSpeechRecognition(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){setRecLiveStatus('· motor no disponible en este navegador',true);return}
-  recState.srLangs=['es-AR','es-ES','es'];
-  recState.srLangIdx=0;
-  recState.srGotResult=false;
-  recState.srDead=false;
-  // UNA sola instancia, reutilizada con start() en cada onend.
-  // Crear instancias nuevas mientras MediaRecorder tiene el micro rompe la captura en Android.
+  if(!SR)return;
   const recog=new SR();
-  recog.lang=recState.srLangs[recState.srLangIdx]||'es';
-  recog.continuous=true;recog.interimResults=true;
-  setRecLiveStatus('· escuchando ('+recog.lang+')');
+  recog.lang='es-AR';recog.continuous=true;recog.interimResults=true;
   recog.onresult=e=>{
-    recState.srGotResult=true;
-    setRecLiveStatus('· escuchando');
     let interim='';
     for(let i=e.resultIndex;i<e.results.length;i++){
       const t=e.results[i][0].transcript;
@@ -1998,78 +1969,30 @@ function startSpeechRecognition(){
     const box=$('rec-live-text');
     if(box){box.innerHTML=esc(recState.finalText)+'<span class="interim">'+esc(interim)+'</span>';box.scrollTop=box.scrollHeight}
   };
-  recog.onend=()=>{
-    // Reanudar la MISMA instancia (Chrome corta la sesión cada tanto)
-    if(recState.recording&&!recState.srDead){
-      try{recog.start()}catch(e){ setTimeout(()=>{try{recog.start()}catch(e2){}},250); }
-    }
-  };
-  recog.onerror=ev=>{
-    const err=ev.error||'';
-    if(err==='no-speech'||err==='aborted')return; // benignos: onend reanuda
-    if(err==='language-not-supported'){
-      // Cambiar idioma sobre la MISMA instancia y reanudar (no recrear)
-      recState.srLangIdx++;
-      if(recState.srLangIdx<recState.srLangs.length){
-        recog.lang=recState.srLangs[recState.srLangIdx];
-        setRecLiveStatus('· probando idioma '+recog.lang);
-      }else{
-        recState.srDead=true;
-        setRecLiveStatus('· este navegador no soporta transcripción en vivo (probá Chrome)',true);
-        toast('Transcripción en vivo no disponible en este navegador. El audio se graba igual.','warning');
-      }
-      return; // onend reanudará con el nuevo lang
-    }
-    if(err==='not-allowed'||err==='service-not-allowed'){
-      recState.srDead=true;
-      setRecLiveStatus('· permiso de micrófono denegado para el motor de voz',true);
-      toast('El navegador bloqueó el reconocimiento de voz. El audio se graba igual.','warning');
-      return;
-    }
-    if(err==='network'){
-      setRecLiveStatus('· error de red del motor de voz, reintentando...',true);
-      return; // onend reanuda
-    }
-    // Cualquier otro error: NO marcar como muerto, dejar que onend reintente
-    setRecLiveStatus('· reintentando ('+err+')...',true);
-  };
-  try{recog.start()}catch(e){
-    setTimeout(()=>{try{recog.start()}catch(e2){}},400);
-  }
+  recog.onend=()=>{ if(recState.recording){ try{recog.start()}catch(e){} } };
+  recog.onerror=ev=>{ if(ev.error==='no-speech'||ev.error==='aborted')return; };
+  try{recog.start()}catch(e){}
   recState.recog=recog;
-  // Watchdog informativo (no destructivo): solo avisa, no corta nada
-  clearTimeout(recState.srWatchdog);
-  recState.srWatchdog=setTimeout(()=>{
-    if(recState.recording&&!recState.srGotResult&&!recState.srDead){
-      setRecLiveStatus('· sin texto aún: hablá cerca del micrófono o revisá la conexión',true);
-    }
-  },12000);
 }
 async function stopRecording(){
   if(!recState.recording)return;
   recState.recording=false;
   clearInterval(recState.timerInt);
-  clearTimeout(recState.srWatchdog);
   $('rec-dot').classList.remove('active');
   $('rec-state-label').textContent='Procesando...';
   $('rec-btn-stop').style.display='none';
-  if(recState.recog){try{recState.recog.onend=null;recState.recog.stop()}catch(e){}}
+  if(recState.recog){try{recState.recog.stop()}catch(e){}}
   const duration=(Date.now()-recState.startTs)/1000;
   const title=$('rec-title').value.trim()||('Reunión '+new Date().toLocaleString('es-AR'));
   const recId=recState.id;
-  let blob=null;
-  if(recState.mediaRec && recState.mediaRec.state!=='inactive'){
-    const stopped=new Promise(res=>{recState.mediaRec.onstop=res});
-    try{recState.mediaRec.stop()}catch(e){}
-    await stopped;
-  }
-  if(recState.stream){try{recState.stream.getTracks().forEach(t=>t.stop())}catch(e){}}
-  if(recState.chunks&&recState.chunks.length){
-    blob=new Blob(recState.chunks,{type:(recState.mediaRec&&recState.mediaRec.mimeType)||'audio/webm'});
-    try{await idbPut(recId,blob)}catch(e){toast('No se pudo guardar el audio','error')}
-  }
+  const stopped=new Promise(res=>{recState.mediaRec.onstop=res});
+  recState.mediaRec.stop();
+  await stopped;
+  if(recState.stream)recState.stream.getTracks().forEach(t=>t.stop());
+  const blob=new Blob(recState.chunks,{type:recState.mediaRec.mimeType||'audio/webm'});
+  try{await idbPut(recId,blob)}catch(e){toast('No se pudo guardar el audio','error')}
   const transcript=(recState.finalText+recState.interimText).trim();
-  const rec={id:recId,title,date:new Date().toISOString(),duration,transcript,summary:'',mime:blob?blob.type:'',size:blob?blob.size:0};
+  const rec={id:recId,title,date:new Date().toISOString(),duration,transcript,summary:'',mime:blob.type,size:blob.size};
   DB.recordings.push(rec);saveDB();
   // reset UI
   $('rec-title').value='';
@@ -2083,11 +2006,8 @@ async function stopRecording(){
   if(transcript){
     if(hasApiKey())summarizeRecording(recId,true);
   }else if(hasBackend()){
-    // No hubo transcripción en vivo (Edge/Android): usar Whisper del servidor automáticamente
-    toast('Sin transcripción en vivo: enviando audio al servidor (Whisper)...','info');
+    toast('Sin transcripción en vivo: enviando audio al servidor...','info');
     serverTranscribe(recId);
-  }else{
-    toast('No se generó transcripción en vivo y no hay backend configurado. Sin transcripción no hay resumen con IA.','warning');
   }
 }
 async function playRecording(id){
