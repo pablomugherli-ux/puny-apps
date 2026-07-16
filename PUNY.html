@@ -1933,16 +1933,8 @@ function renderRecordingsList(){
 async function startRecording(){
   if(recState.recording)return;
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){toast('El navegador no permite acceder al micrófono','error');return}
-  try{
-    recState.stream=await navigator.mediaDevices.getUserMedia({audio:true});
-  }catch(e){toast('No se pudo acceder al micrófono. Revisá permisos.','error');return}
   recState.chunks=[];recState.finalText='';recState.interimText='';recState.id=uid();
-  let mime='audio/webm';
-  if(window.MediaRecorder&&!MediaRecorder.isTypeSupported('audio/webm')){mime=MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':''}
-  try{recState.mediaRec=mime?new MediaRecorder(recState.stream,{mimeType:mime}):new MediaRecorder(recState.stream)}
-  catch(e){recState.mediaRec=new MediaRecorder(recState.stream)}
-  recState.mediaRec.ondataavailable=e=>{if(e.data&&e.data.size)recState.chunks.push(e.data)};
-  recState.mediaRec.start(1000);
+  // Marcar grabando y preparar UI ANTES de arrancar nada de audio
   recState.recording=true;recState.startTs=Date.now();
   $('rec-dot').classList.add('active');
   $('rec-state-label').textContent='Grabando...';
@@ -1951,7 +1943,30 @@ async function startRecording(){
   $('rec-live-box').style.display='block';
   $('rec-live-text').innerHTML='';
   recState.timerInt=setInterval(()=>{$('rec-timer').textContent=fmtDur((Date.now()-recState.startTs)/1000)},500);
+  // 1) PRIMERO el reconocimiento de voz: en Android debe agarrar el micrófono antes
+  //    que MediaRecorder, o queda "escuchando" sin recibir audio.
   startSpeechRecognition();
+  // 2) DESPUÉS, con un pequeño respiro, la grabación de audio sobre el mismo micrófono.
+  setTimeout(async()=>{
+    if(!recState.recording)return; // por si detuvo antes
+    try{
+      recState.stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    }catch(e){
+      // El audio no se pudo grabar, pero la transcripción en vivo puede seguir andando.
+      toast('No se pudo grabar el audio, pero la transcripción sigue activa.','warning');
+      return;
+    }
+    if(!recState.recording){ // detuvo mientras pedía permiso
+      try{recState.stream.getTracks().forEach(t=>t.stop())}catch(_){}
+      return;
+    }
+    let mime='audio/webm';
+    if(window.MediaRecorder&&!MediaRecorder.isTypeSupported('audio/webm')){mime=MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':''}
+    try{recState.mediaRec=mime?new MediaRecorder(recState.stream,{mimeType:mime}):new MediaRecorder(recState.stream)}
+    catch(e){recState.mediaRec=new MediaRecorder(recState.stream)}
+    recState.mediaRec.ondataavailable=e=>{if(e.data&&e.data.size)recState.chunks.push(e.data)};
+    recState.mediaRec.start(1000);
+  },350);
 }
 function setRecLiveStatus(msg,isErr){
   const s=$('rec-live-status');
@@ -2042,14 +2057,19 @@ async function stopRecording(){
   const duration=(Date.now()-recState.startTs)/1000;
   const title=$('rec-title').value.trim()||('Reunión '+new Date().toLocaleString('es-AR'));
   const recId=recState.id;
-  const stopped=new Promise(res=>{recState.mediaRec.onstop=res});
-  recState.mediaRec.stop();
-  await stopped;
-  if(recState.stream)recState.stream.getTracks().forEach(t=>t.stop());
-  const blob=new Blob(recState.chunks,{type:recState.mediaRec.mimeType||'audio/webm'});
-  try{await idbPut(recId,blob)}catch(e){toast('No se pudo guardar el audio','error')}
+  let blob=null;
+  if(recState.mediaRec && recState.mediaRec.state!=='inactive'){
+    const stopped=new Promise(res=>{recState.mediaRec.onstop=res});
+    try{recState.mediaRec.stop()}catch(e){}
+    await stopped;
+  }
+  if(recState.stream){try{recState.stream.getTracks().forEach(t=>t.stop())}catch(e){}}
+  if(recState.chunks&&recState.chunks.length){
+    blob=new Blob(recState.chunks,{type:(recState.mediaRec&&recState.mediaRec.mimeType)||'audio/webm'});
+    try{await idbPut(recId,blob)}catch(e){toast('No se pudo guardar el audio','error')}
+  }
   const transcript=(recState.finalText+recState.interimText).trim();
-  const rec={id:recId,title,date:new Date().toISOString(),duration,transcript,summary:'',mime:blob.type,size:blob.size};
+  const rec={id:recId,title,date:new Date().toISOString(),duration,transcript,summary:'',mime:blob?blob.type:'',size:blob?blob.size:0};
   DB.recordings.push(rec);saveDB();
   // reset UI
   $('rec-title').value='';
