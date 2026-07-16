@@ -1953,11 +1953,35 @@ async function startRecording(){
   recState.timerInt=setInterval(()=>{$('rec-timer').textContent=fmtDur((Date.now()-recState.startTs)/1000)},500);
   startSpeechRecognition();
 }
+function _diag(msg){
+  let box=$('diag-box');
+  if(!box){
+    box=document.createElement('div');
+    box.id='diag-box';
+    box.style.cssText='position:fixed;left:6px;right:6px;bottom:6px;z-index:99999;background:#111;color:#0f0;font:11px/1.4 monospace;padding:8px;border:1px solid #0f0;border-radius:8px;max-height:40vh;overflow:auto;white-space:pre-wrap;word-break:break-word';
+    const btn=document.createElement('button');
+    btn.textContent='✕ cerrar diag';
+    btn.style.cssText='position:sticky;top:0;float:right;background:#333;color:#fff;border:0;padding:2px 8px;border-radius:4px;font:11px monospace';
+    btn.onclick=()=>box.remove();
+    box.appendChild(btn);
+    document.body.appendChild(box);
+  }
+  const t=new Date().toLocaleTimeString('es-AR');
+  const line=document.createElement('div');
+  line.textContent='['+t+'] '+msg;
+  box.appendChild(line);
+  box.scrollTop=box.scrollHeight;
+}
 function startSpeechRecognition(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR)return;
+  _diag('SR disponible: '+(!!SR)+' | navegador: '+navigator.userAgent.slice(0,60));
+  if(!SR){_diag('❌ El navegador NO tiene SpeechRecognition. Fin.');return}
   const recog=new SR();
   recog.lang='es-AR';recog.continuous=true;recog.interimResults=true;
+  _diag('Instancia creada, lang=es-AR, arrancando...');
+  recog.onstart=()=>_diag('✅ onstart: el motor arrancó (escuchando)');
+  recog.onaudiostart=()=>_diag('🎤 onaudiostart: recibiendo audio del micrófono');
+  recog.onspeechstart=()=>_diag('🗣️ onspeechstart: detectó voz');
   recog.onresult=e=>{
     let interim='';
     for(let i=e.resultIndex;i<e.results.length;i++){
@@ -1966,12 +1990,13 @@ function startSpeechRecognition(){
       else interim+=t;
     }
     recState.interimText=interim;
+    _diag('📝 onresult: "'+(recState.finalText+interim).slice(-40)+'"');
     const box=$('rec-live-text');
     if(box){box.innerHTML=esc(recState.finalText)+'<span class="interim">'+esc(interim)+'</span>';box.scrollTop=box.scrollHeight}
   };
-  recog.onend=()=>{ if(recState.recording){ try{recog.start()}catch(e){} } };
-  recog.onerror=ev=>{ if(ev.error==='no-speech'||ev.error==='aborted')return; };
-  try{recog.start()}catch(e){}
+  recog.onend=()=>{ _diag('⏹️ onend (recording='+recState.recording+')'); if(recState.recording){ try{recog.start();_diag('↻ reiniciado')}catch(e){_diag('❌ error al reiniciar: '+e.message)} } };
+  recog.onerror=ev=>{ _diag('⚠️ onerror: '+ev.error); if(ev.error==='no-speech'||ev.error==='aborted')return; };
+  try{recog.start()}catch(e){_diag('❌ error en start(): '+e.message)}
   recState.recog=recog;
 }
 async function stopRecording(){
