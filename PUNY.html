@@ -1954,23 +1954,8 @@ async function startRecording(){
   startSpeechRecognition();
 }
 function _diag(msg){
-  let box=$('diag-box');
-  if(!box){
-    box=document.createElement('div');
-    box.id='diag-box';
-    box.style.cssText='position:fixed;left:6px;right:6px;bottom:6px;z-index:99999;background:#111;color:#0f0;font:11px/1.4 monospace;padding:8px;border:1px solid #0f0;border-radius:8px;max-height:40vh;overflow:auto;white-space:pre-wrap;word-break:break-word';
-    const btn=document.createElement('button');
-    btn.textContent='✕ cerrar diag';
-    btn.style.cssText='position:sticky;top:0;float:right;background:#333;color:#fff;border:0;padding:2px 8px;border-radius:4px;font:11px monospace';
-    btn.onclick=()=>box.remove();
-    box.appendChild(btn);
-    document.body.appendChild(box);
-  }
-  const t=new Date().toLocaleTimeString('es-AR');
-  const line=document.createElement('div');
-  line.textContent='['+t+'] '+msg;
-  box.appendChild(line);
-  box.scrollTop=box.scrollHeight;
+  // Panel visual desactivado — diagnóstico solo por consola (F12)
+  console.log('[REC-DIAG]', msg);
 }
 function startSpeechRecognition(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
