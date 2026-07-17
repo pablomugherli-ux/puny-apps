@@ -1892,7 +1892,14 @@ function renderDayExtrasHTML(iso){
 // ============================================================
 // GRABACIONES (MediaRecorder + Web Speech)
 // ============================================================
-let recState={recording:false,mediaRec:null,chunks:[],stream:null,startTs:0,timerInt:null,recog:null,finalText:'',interimText:'',id:null};
+let recState={recording:false,mediaRec:null,chunks:[],stream:null,startTs:0,timerInt:null,recog:null,finalText:'',interimText:'',id:null,wakeLock:null};
+// Wake Lock: evita que la pantalla se apague durante la grabación (clave en Android)
+async function acquireWakeLock(){
+  if(!('wakeLock' in navigator))return;
+  try{recState.wakeLock=await navigator.wakeLock.request('screen');_diag('🔒 wakeLock activo: la pantalla no se apaga mientras grabás')}
+  catch(e){_diag('wakeLock no disponible: '+e.message)}
+}
+document.addEventListener('visibilitychange',()=>{if(recState.recording&&document.visibilityState==='visible')acquireWakeLock()});
 function fmtDur(sec){sec=Math.floor(sec||0);const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;return(h?String(h).padStart(2,'0')+':':'')+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')}
 
 function renderGrabaciones(){
@@ -1944,6 +1951,7 @@ async function startRecording(){
   recState.mediaRec.ondataavailable=e=>{if(e.data&&e.data.size)recState.chunks.push(e.data)};
   recState.mediaRec.start(1000);
   recState.recording=true;recState.startTs=Date.now();
+  acquireWakeLock();
   $('rec-dot').classList.add('active');
   $('rec-state-label').textContent='Grabando...';
   $('rec-btn-start').style.display='none';
@@ -1979,7 +1987,10 @@ function startSpeechRecognition(){
     const box=$('rec-live-text');
     if(box){box.innerHTML=esc(recState.finalText)+'<span class="interim">'+esc(interim)+'</span>';box.scrollTop=box.scrollHeight}
   };
-  recog.onend=()=>{ _diag('⏹️ onend (recording='+recState.recording+')'); if(recState.recording){ try{recog.start();_diag('↻ reiniciado')}catch(e){_diag('❌ error al reiniciar: '+e.message)} } };
+  recog.onend=()=>{ _diag('⏹️ onend (recording='+recState.recording+')');
+    // Rescatar el interim pendiente antes del reinicio para no perder palabras
+    if(recState.interimText){recState.finalText+=recState.interimText+' ';recState.interimText='';}
+    if(recState.recording){ try{recog.start();_diag('↻ reiniciado')}catch(e){_diag('❌ error al reiniciar: '+e.message)} } };
   recog.onerror=ev=>{ _diag('⚠️ onerror: '+ev.error); if(ev.error==='no-speech'||ev.error==='aborted')return; };
   try{recog.start()}catch(e){_diag('❌ error en start(): '+e.message)}
   recState.recog=recog;
@@ -1992,6 +2003,7 @@ async function stopRecording(){
   $('rec-state-label').textContent='Procesando...';
   $('rec-btn-stop').style.display='none';
   if(recState.recog){try{recState.recog.stop()}catch(e){}}
+  if(recState.wakeLock){try{recState.wakeLock.release()}catch(e){} recState.wakeLock=null;}
   const duration=(Date.now()-recState.startTs)/1000;
   const title=$('rec-title').value.trim()||('Reunión '+new Date().toLocaleString('es-AR'));
   const recId=recState.id;
@@ -2717,7 +2729,12 @@ async function pushToCloud(cols){
     (cols||SYNC_COLS).forEach(c=>{if(DB[c]!==undefined&&!DB._v[c])DB._v[c]=now;});
 
     const payload={};
-    SYNC_COLS.forEach(c=>{payload[c]=DB[c]||[];});
+    SYNC_COLS.forEach(c=>{
+      if(c==='recordings'){
+        // Los transcripts completos NO viajan a la nube (engordan el bin); el resumen sí
+        payload[c]=(DB[c]||[]).map(r=>{const{transcript,...rest}=r;return rest;});
+      }else{payload[c]=DB[c]||[];}
+    });
     payload._v=DB._v;
     payload.version=now;
     // Auth para acceso multidispositivo
@@ -2784,7 +2801,11 @@ async function _doPull(force){
       const lv=locV[col]||DB._localVer||0;
       // Dar prioridad a lo local si es más nuevo (aislamiento)
       if(force || rv>=lv){
-        DB[col]=rem[col];
+        if(col==='recordings'){
+          // La nube no trae transcripts: preservar los locales por id
+          const locT={};(DB.recordings||[]).forEach(x=>{if(x&&x.transcript)locT[x.id]=x.transcript;});
+          DB[col]=(rem[col]||[]).map(x=>(x&&!x.transcript&&locT[x.id])?Object.assign({},x,{transcript:locT[x.id]}):x);
+        }else{DB[col]=rem[col];}
         if(!DB._v)DB._v={};
         DB._v[col]=rv;
         changed=true;
